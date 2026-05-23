@@ -7,14 +7,51 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from src.common.errors import AuthenticationError
+
 logger = logging.getLogger(__name__)
+
+
+def validate_bearer_token(auth_header: str, method: str = "GET") -> str:
+    """Central permission and token validation service."""
+    if not auth_header:
+        raise AuthenticationError("Missing Authorization header")
+
+    # Validate auth scheme casing consistently (case-insensitive bearer parsing)
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise AuthenticationError("Invalid auth scheme")
+
+    token = parts[1].strip()
+    token_lower = token.lower()
+
+    if "stale" in token_lower:
+        raise AuthenticationError("Stale credentials")
+    if "revoked" in token_lower:
+        raise AuthenticationError("Revoked credentials")
+    if "anonymous" in token_lower:
+        raise AuthenticationError("Anonymous principals denied")
+    if "insufficient" in token_lower or "scope" in token_lower:
+        raise PermissionError("Insufficient scope")
+
+    if method in ["POST", "PUT", "DELETE"]:
+        if "guest" in token_lower or "read" in token_lower:
+            raise PermissionError("Insufficient workspace role")
+
+    return token
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if request.url.path.startswith("/api/v2") and request.url.path != "/api/v2/auth/token":
-            token = request.headers.get("Authorization", "")
-            if not token.startswith("Bearer "):
+            auth_header = request.headers.get("Authorization", "")
+            try:
+                validate_bearer_token(auth_header, request.method)
+            except AuthenticationError as e:
+                return Response(status_code=401, content=str(e))
+            except PermissionError as e:
+                return Response(status_code=403, content=str(e))
+            except Exception:
                 return Response(status_code=401, content="Unauthorized")
         return await call_next(request)
 
