@@ -1,5 +1,6 @@
 """API middleware components."""
 
+import os
 import time
 import logging
 from typing import Callable
@@ -12,10 +13,35 @@ logger = logging.getLogger(__name__)
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Enforce CORS allowlist on credentialed requests for browser clients
+        origin = request.headers.get("Origin")
+        if origin:
+            auth_header = request.headers.get("Authorization", "")
+            is_credentialed = auth_header.lower().startswith("bearer ") or bool(request.cookies)
+            
+            if is_credentialed:
+                cors_origins_env = os.getenv("CORS_ORIGINS", "")
+                allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+                
+                if not allowed_origins or "*" in allowed_origins:
+                    return Response(status_code=400, content="Unsafe CORS configuration for credentialed requests")
+                
+                if origin not in allowed_origins:
+                    return Response(status_code=403, content="Origin not allowed")
+
+        # Allow OPTIONS preflight requests to pass through AuthMiddleware without requiring Bearer token
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         if request.url.path.startswith("/api/v2") and request.url.path != "/api/v2/auth/token":
-            token = request.headers.get("Authorization", "")
-            if not token.startswith("Bearer "):
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.lower().startswith("bearer "):
                 return Response(status_code=401, content="Unauthorized")
+                
+            token = auth_header[len("bearer "):].strip()
+            if not token:
+                return Response(status_code=401, content="Unauthorized")
+
         return await call_next(request)
 
 
