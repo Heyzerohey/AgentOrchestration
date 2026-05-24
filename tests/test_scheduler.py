@@ -7,34 +7,73 @@ class TestTaskScheduler:
         self.scheduler = TaskScheduler()
 
     def test_enqueue_task(self):
-        task_id = self.scheduler.enqueue({"type": "test", "payload": {}})
+        task_id = self.scheduler.enqueue({"type": "test", "payload": {}}, workspace_id="test-workspace")
         assert task_id is not None
 
     def test_dequeue_task(self):
-        self.scheduler.enqueue({"type": "test", "payload": {"data": 1}})
+        self.scheduler.enqueue({"type": "test", "payload": {"data": 1}}, workspace_id="test-workspace")
         import asyncio
-        task = asyncio.run(self.scheduler.dequeue())
+        task = asyncio.run(self.scheduler.dequeue(workspace_id="test-workspace"))
         assert task is not None
         assert task["type"] == "test"
 
     def test_enqueue_multiple_priorities(self):
-        self.scheduler.enqueue({"type": "low"}, priority=1)
-        self.scheduler.enqueue({"type": "high"}, priority=10)
+        self.scheduler.enqueue({"type": "low"}, workspace_id="test-workspace", priority=1)
+        self.scheduler.enqueue({"type": "high"}, workspace_id="test-workspace", priority=10)
         import asyncio
-        task = asyncio.run(self.scheduler.dequeue())
+        task = asyncio.run(self.scheduler.dequeue(workspace_id="test-workspace"))
         assert task["type"] == "high"
 
     def test_complete_task(self):
-        self.scheduler.enqueue({"type": "test"})
+        self.scheduler.enqueue({"type": "test"}, workspace_id="test-workspace")
         import asyncio
-        task = asyncio.run(self.scheduler.dequeue())
-        assert self.scheduler.complete(task["id"])
+        task = asyncio.run(self.scheduler.dequeue(workspace_id="test-workspace"))
+        assert self.scheduler.complete(workspace_id="test-workspace", task_id=task["id"])
 
     def test_fail_task_with_retry(self):
-        self.scheduler.enqueue({"type": "test"})
+        self.scheduler.enqueue({"type": "test"}, workspace_id="test-workspace")
         import asyncio
-        task = asyncio.run(self.scheduler.dequeue())
-        assert self.scheduler.fail(task["id"])
+        task = asyncio.run(self.scheduler.dequeue(workspace_id="test-workspace"))
+        assert self.scheduler.fail(workspace_id="test-workspace", task_id=task["id"])
+
+    def test_workspace_isolation_and_collision(self):
+        # 1. Isolation check
+        self.scheduler.enqueue({"type": "task-a"}, workspace_id="workspace-a")
+        self.scheduler.enqueue({"type": "task-b"}, workspace_id="workspace-b")
+
+        import asyncio
+        # Dequeueing from workspace-a should only yield task-a
+        task_a = asyncio.run(self.scheduler.dequeue(workspace_id="workspace-a"))
+        assert task_a is not None
+        assert task_a["type"] == "task-a"
+        assert task_a["workspace_id"] == "workspace-a"
+
+        # Dequeueing from workspace-a again should yield None
+        assert asyncio.run(self.scheduler.dequeue(workspace_id="workspace-a")) is None
+
+        # Dequeueing from workspace-b yields task-b
+        task_b = asyncio.run(self.scheduler.dequeue(workspace_id="workspace-b"))
+        assert task_b is not None
+        assert task_b["type"] == "task-b"
+        assert task_b["workspace_id"] == "workspace-b"
+
+        # 2. Task ID collision check
+        collision_id = "shared-id-123"
+        self.scheduler.enqueue({"id": collision_id, "type": "collision-a"}, workspace_id="workspace-a")
+        self.scheduler.enqueue({"id": collision_id, "type": "collision-b"}, workspace_id="workspace-b")
+
+        # Dequeueing yields the correct scoped task without interference
+        deq_a = asyncio.run(self.scheduler.dequeue(workspace_id="workspace-a"))
+        deq_b = asyncio.run(self.scheduler.dequeue(workspace_id="workspace-b"))
+
+        assert deq_a["id"] == collision_id
+        assert deq_a["type"] == "collision-a"
+        assert deq_b["id"] == collision_id
+        assert deq_b["type"] == "collision-b"
+
+        # Completing/failing are strictly scoped
+        assert self.scheduler.complete(workspace_id="workspace-a", task_id=collision_id)
+        assert self.scheduler.complete(workspace_id="workspace-b", task_id=collision_id)
 
 # 2019-01-09T19:07:03 update
 
