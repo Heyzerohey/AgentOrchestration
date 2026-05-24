@@ -33,9 +33,41 @@ class PriorityQueue:
 class TaskScheduler:
     def __init__(self):
         self._queues: Dict[str, PriorityQueue] = {}
-        self._scheduled: Dict[str, float] = {}
+        self._scheduled: Dict[str, tuple] = {}  # task_id -> (task, execute_time)
         self._in_flight: Dict[str, Dict] = {}
         self._max_retries = 3
+        self._unhealthy_services = set()
+        self._audit_log = []
+
+    def set_service_health(self, service: str, healthy: bool) -> None:
+        if healthy:
+            self._unhealthy_services.discard(service)
+            self._audit_log.append({
+                "timestamp": time.time(),
+                "action": "service_recovered",
+                "service": service
+            })
+        else:
+            self._unhealthy_services.add(service)
+            self._audit_log.append({
+                "timestamp": time.time(),
+                "action": "service_outage",
+                "service": service
+            })
+
+    def check_health_gate(self, task: Dict) -> bool:
+        """Enforces health gates. Returns True if healthy/allowed, False if deferred."""
+        deps = task.get("dependencies", [])
+        for dep in deps:
+            if dep in self._unhealthy_services:
+                self._audit_log.append({
+                    "timestamp": time.time(),
+                    "action": "task_deferred",
+                    "task_id": task.get("id"),
+                    "reason": f"dependency_outage: {dep}"
+                })
+                return False
+        return True
 
     def enqueue(self, task: Dict, queue: str = "default", priority: int = 0) -> str:
         task_id = str(uuid4())
@@ -51,22 +83,31 @@ class TaskScheduler:
     def schedule(self, task: Dict, delay: float, queue: str = "default", priority: int = 0) -> str:
         task_id = str(uuid4())
         task["id"] = task_id
-        self._scheduled[task_id] = time.time() + delay
+        self._scheduled[task_id] = (task, time.time() + delay)
         return task_id
 
     async def dequeue(self, queue: str = "default", timeout: float = 1.0) -> Optional[Dict]:
         now = time.time()
-        expired = [tid for tid, t in self._scheduled.items() if t <= now]
+        expired = [tid for tid, val in self._scheduled.items() if val[1] <= now]
         for tid in expired:
-            task = self._scheduled.pop(tid)
-            if task:
+            val = self._scheduled.pop(tid, None)
+            if val:
+                task = val[0]
                 self.enqueue(task, queue)
 
         if queue in self._queues and len(self._queues[queue]) > 0:
-            task = self._queues[queue].pop()
+            task = self._queues[queue].peek()
             if task:
-                self._in_flight[task["id"]] = task
-                return task
+                if not self.check_health_gate(task):
+                    # Outage! Defer task by popping and scheduling it with a 1-second delay
+                    self._queues[queue].pop()
+                    self.schedule(task, delay=1.0, queue=queue, priority=task.get("priority", 0))
+                    return None
+
+                task = self._queues[queue].pop()
+                if task:
+                    self._in_flight[task["id"]] = task
+                    return task
         return None
 
     def complete(self, task_id: str) -> bool:
