@@ -16,12 +16,24 @@ class Config:
         with open(path) as f:
             self._data = json.load(f)
 
+    def _coerce_value(self, value: str) -> Any:
+        stripped = value.strip()
+        if stripped.lower() in ("inf", "infinity", "nan", "+inf", "-inf", "+infinity", "-infinity", "+nan", "-nan"):
+            return value
+        try:
+            return int(value)
+        except ValueError:
+            try:
+                return float(value)
+            except ValueError:
+                return value
+
     def _load_env_overrides(self) -> None:
         prefix = "AO_"
         for key, value in os.environ.items():
             if key.startswith(prefix):
                 config_key = key[len(prefix):].lower().replace("_", ".")
-                self._set_nested(config_key, value)
+                self._set_nested(config_key, self._coerce_value(value))
 
     def _set_nested(self, key: str, value: Any) -> None:
         parts = key.split(".")
