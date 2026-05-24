@@ -2,6 +2,7 @@
 
 import time
 import logging
+import re
 from typing import Callable
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -49,6 +50,25 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         duration = time.time() - start
         logger.info(f"{request.method} {request.url.path} {response.status_code} {duration:.3f}s")
         return response
+
+
+class PathMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        path = request.scope.get("path", "")
+        if path:
+            collapsed = re.sub(r"/+", "/", path)
+            request.scope["path"] = collapsed
+
+        raw_path = request.scope.get("raw_path", b"")
+        if raw_path:
+            try:
+                decoded = raw_path.decode("utf-8", errors="ignore")
+                collapsed_raw = re.sub(r"/+", "/", decoded).encode("utf-8")
+                request.scope["raw_path"] = collapsed_raw
+            except Exception:
+                pass
+
+        return await call_next(request)
 
 # 2019-03-01T18:35:19 update
 
