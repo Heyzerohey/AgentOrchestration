@@ -44,6 +44,40 @@ class Config:
                 return default
         return current
 
+    def get_bool(self, key: str, default: Any = None) -> bool:
+        """Retrieve a configuration value as a boolean.
+
+        Accepted values (case-insensitive):
+        - True values: True, "true", "1", "yes", "on", 1, 1.0
+        - False values: False, "false", "0", "no", "off", 0, 0.0
+
+        Any other value will raise a ValueError.
+        If the key is missing and no default is provided (or default is None), ValueError is raised.
+        """
+        value = self.get(key, default)
+        if value is None:
+            raise ValueError(f"Config key '{key}' is not set and no default was provided.")
+
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, str):
+            val_lower = value.strip().lower()
+            if val_lower in ("true", "1", "yes", "on"):
+                return True
+            if val_lower in ("false", "0", "no", "off"):
+                return False
+            raise ValueError(f"Config key '{key}' has unsupported boolean string value: {value}")
+
+        if isinstance(value, (int, float)):
+            if value == 1:
+                return True
+            if value == 0:
+                return False
+            raise ValueError(f"Config key '{key}' has unsupported boolean numeric value: {value}")
+
+        raise ValueError(f"Config key '{key}' has non-boolean type: {type(value).__name__}")
+
     def set(self, key: str, value: Any) -> None:
         self._set_nested(key, value)
 

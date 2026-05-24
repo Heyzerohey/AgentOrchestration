@@ -32,6 +32,48 @@ class TestConfig:
         assert data["key1"] == "value1"
         assert data["key2"] == "value2"
 
+    def test_get_bool_valid_values(self):
+        config = Config()
+        
+        # Test truthy values
+        truthy_inputs = [True, "true", "TRUE", " 1 ", "yes", "ON", 1, 1.0]
+        for idx, val in enumerate(truthy_inputs):
+            key = f"truthy.{idx}"
+            config.set(key, val)
+            assert config.get_bool(key) is True
+
+        # Test falsy values
+        falsy_inputs = [False, "false", "FALSE", " 0 ", "no", "OFF", 0, 0.0]
+        for idx, val in enumerate(falsy_inputs):
+            key = f"falsy.{idx}"
+            config.set(key, val)
+            assert config.get_bool(key) is False
+
+    def test_get_bool_invalid_values(self):
+        config = Config()
+        
+        invalid_inputs = ["maybe", "2", 2, 3.14, {"nested": True}, [True]]
+        for idx, val in enumerate(invalid_inputs):
+            key = f"invalid.{idx}"
+            config.set(key, val)
+            with pytest.raises(ValueError):
+                config.get_bool(key)
+
+    def test_get_bool_missing_and_default(self):
+        config = Config()
+        
+        # Missing key raises ValueError
+        with pytest.raises(ValueError):
+            config.get_bool("missing.key")
+
+        # Default fallback works
+        assert config.get_bool("missing.key", default=True) is True
+        assert config.get_bool("missing.key", default="off") is False
+
+        # Invalid default raises ValueError
+        with pytest.raises(ValueError):
+            config.get_bool("missing.key", default="invalid_default")
+
 # 2019-02-01T18:58:35 update
 
 # 2019-07-31T13:45:15 update
