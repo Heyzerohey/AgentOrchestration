@@ -23,6 +23,8 @@ class TestMetricsCollector:
         snapshot = self.metrics.snapshot()
         assert snapshot["histograms"]["response.time"]["count"] == 2
         assert snapshot["histograms"]["response.time"]["avg"] == 1.0
+        assert snapshot["histograms"]["response.time"]["min"] == 0.5
+        assert snapshot["histograms"]["response.time"]["max"] == 1.5
 
     def test_timer(self):
         self.metrics.start_timer("operation")
