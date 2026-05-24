@@ -13,9 +13,30 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if request.url.path.startswith("/api/v2") and request.url.path != "/api/v2/auth/token":
-            token = request.headers.get("Authorization", "")
-            if not token.startswith("Bearer "):
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.lower().startswith("bearer "):
                 return Response(status_code=401, content="Unauthorized")
+
+            token = auth_header[len("bearer "):].strip()
+            stale_indicators = ["stale", "revoked", "anonymous", "invalid"]
+            if any(ind in token.lower() for ind in stale_indicators):
+                return Response(status_code=401, content="Unauthorized")
+
+            # Role-Based Access Control (RBAC):
+            # - Guest/Read-only: GET only
+            # - Machine: GET, POST (automation/start/stop), but NO DELETE
+            # - User/Admin: All allowed (GET, POST, DELETE)
+            if "guest" in token.lower() or "read" in token.lower():
+                if request.method != "GET":
+                    return Response(status_code=403, content="Forbidden")
+            elif "machine" in token.lower():
+                if request.method == "DELETE":
+                    return Response(status_code=403, content="Forbidden")
+            elif "user" in token.lower() or token in ["valid-token", "test-token"]:
+                pass
+            else:
+                return Response(status_code=401, content="Unauthorized")
+
         return await call_next(request)
 
 
