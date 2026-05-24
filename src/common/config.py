@@ -50,6 +50,31 @@ class Config:
     def to_dict(self) -> Dict:
         return self._data
 
+    def validate_resource_limits(self) -> None:
+        """Validates that sandbox resource limits config is positive and numeric."""
+        cpu_time = self.get("sandbox.cpu_time")
+        memory_mb = self.get("sandbox.memory_mb")
+        disk_mb = self.get("sandbox.disk_mb")
+
+        # Only validate if they are present in config
+        if cpu_time is not None:
+            if not isinstance(cpu_time, (int, float)):
+                raise TypeError("Config value 'sandbox.cpu_time' must be numeric")
+            if cpu_time <= 0:
+                raise ValueError("Config value 'sandbox.cpu_time' must be positive")
+
+        if memory_mb is not None:
+            if not isinstance(memory_mb, (int, float)):
+                raise TypeError("Config value 'sandbox.memory_mb' must be numeric")
+            if memory_mb <= 0:
+                raise ValueError("Config value 'sandbox.memory_mb' must be positive")
+
+        if disk_mb is not None:
+            if not isinstance(disk_mb, (int, float)):
+                raise TypeError("Config value 'sandbox.disk_mb' must be numeric")
+            if disk_mb <= 0:
+                raise ValueError("Config value 'sandbox.disk_mb' must be positive")
+
 # 2019-03-14T15:29:32 update
 
 # 2019-05-06T15:01:41 update
