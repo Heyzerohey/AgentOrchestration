@@ -2,12 +2,64 @@
 
 import argparse
 import sys
+import json
+import os
 
 from src.common.config import Config
 from src.common.logging import configure_logging
+from src.sdk.client import OrchestratorClient
 
 
-def cli():
+def handle_init(args) -> int:
+    print(f"Initializing project: {args.name}")
+    return 0
+
+
+def handle_deploy(args) -> int:
+    print(f"Deploying agent from manifest: {args.manifest}")
+    if not os.path.exists(args.manifest):
+        print(f"Error: Manifest file not found: {args.manifest}", file=sys.stderr)
+        return 1
+
+    try:
+        with open(args.manifest, "r") as f:
+            manifest_data = json.load(f)
+    except Exception as e:
+        print(f"Error: Failed to parse manifest JSON: {e}", file=sys.stderr)
+        return 1
+
+    name = manifest_data.get("name")
+    agent_type = manifest_data.get("type")
+    config = manifest_data.get("config", {})
+
+    if not name or not agent_type:
+        print("Error: Manifest must contain 'name' and 'type' keys", file=sys.stderr)
+        return 1
+
+    client = OrchestratorClient()
+    try:
+        res = client.register_agent(name, agent_type, config)
+        if "error" in res:
+            print(f"Error: Deployment failed: {res.get('message', 'Unknown error')}", file=sys.stderr)
+            return 1
+        print(f"Agent deployed successfully: {res.get('agent_id', name)}")
+        return 0
+    except Exception as e:
+        print(f"Error: Failed to contact the orchestrator: {e}", file=sys.stderr)
+        return 1
+
+
+def handle_status(args) -> int:
+    print("Checking agent status...")
+    return 0
+
+
+def handle_logs(args) -> int:
+    print(f"Fetching logs for agent: {args.agent_id}")
+    return 0
+
+
+def cli(args_list=None) -> int:
     parser = argparse.ArgumentParser(description="Agent Orchestrator CLI")
     parser.add_argument("--config", "-c", help="Path to config file")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
@@ -27,7 +79,10 @@ def cli():
     logs_parser.add_argument("agent_id", help="Agent ID")
     logs_parser.add_argument("--tail", "-t", type=int, default=50, help="Number of lines")
 
-    args = parser.parse_args()
+    if args_list is not None:
+        args = parser.parse_args(args_list)
+    else:
+        args = parser.parse_args()
 
     if args.verbose:
         configure_logging("DEBUG")
@@ -35,20 +90,20 @@ def cli():
         configure_logging("INFO")
 
     if args.command == "init":
-        print(f"Initializing project: {args.name}")
+        return handle_init(args)
     elif args.command == "deploy":
-        print(f"Deploying agent from manifest: {args.manifest}")
+        return handle_deploy(args)
     elif args.command == "status":
-        print("Checking agent status...")
+        return handle_status(args)
     elif args.command == "logs":
-        print(f"Fetching logs for agent: {args.agent_id}")
+        return handle_logs(args)
     else:
         parser.print_help()
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    cli()
+    sys.exit(cli())
 
 # 2019-01-03T18:44:00 update
 
