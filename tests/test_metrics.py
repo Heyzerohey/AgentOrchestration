@@ -11,6 +11,9 @@ class TestMetricsCollector:
         self.metrics.increment("requests.total")
         snapshot = self.metrics.snapshot()
         assert snapshot["counters"]["requests.total"] == 2
+        
+        with pytest.raises(ValueError, match="Counter increments must be non-negative"):
+            self.metrics.increment("requests.total", -1)
 
     def test_gauge(self):
         self.metrics.gauge("memory.usage", 85.5)
