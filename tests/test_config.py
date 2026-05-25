@@ -32,6 +32,13 @@ class TestConfig:
         assert data["key1"] == "value1"
         assert data["key2"] == "value2"
 
+    def test_env_overrides(self, monkeypatch):
+        monkeypatch.setenv("AO_CFG_APP_PORT", "9090")
+        monkeypatch.setenv("AO_AGENT_ID", "ignore_me")
+        config = Config()
+        assert config.get("app.port") == "9090"
+        assert config.get("agent.id") is None
+
 # 2019-02-01T18:58:35 update
 
 # 2019-07-31T13:45:15 update
