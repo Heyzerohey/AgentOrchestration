@@ -23,6 +23,8 @@ class MetricsCollector:
             self._gauges[metric] = value
 
     def observe(self, metric: str, value: float) -> None:
+        if not isinstance(value, (int, float)):
+            raise ValueError("Histogram observation must be numeric")
         with self._lock:
             self._histograms[metric].append(value)
 

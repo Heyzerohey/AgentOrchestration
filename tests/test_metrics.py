@@ -24,6 +24,12 @@ class TestMetricsCollector:
         assert snapshot["histograms"]["response.time"]["count"] == 2
         assert snapshot["histograms"]["response.time"]["avg"] == 1.0
 
+        with pytest.raises(ValueError, match="Histogram observation must be numeric"):
+            self.metrics.observe("response.time", "invalid")
+        
+        with pytest.raises(ValueError, match="Histogram observation must be numeric"):
+            self.metrics.observe("response.time", None)
+
     def test_timer(self):
         self.metrics.start_timer("operation")
         import time
