@@ -31,6 +31,17 @@ class TestMetricsCollector:
         duration = self.metrics.stop_timer("operation")
         assert duration > 0.005
 
+    def test_namespace(self):
+        namespaced_metrics = MetricsCollector(namespace="agent1")
+        namespaced_metrics.increment("requests")
+        namespaced_metrics.gauge("memory", 100.0)
+        namespaced_metrics.start_timer("db_query")
+        namespaced_metrics.stop_timer("db_query")
+        snapshot = namespaced_metrics.snapshot()
+        assert snapshot["counters"]["agent1.requests"] == 1
+        assert snapshot["gauges"]["agent1.memory"] == 100.0
+        assert "agent1.db_query" in snapshot["histograms"]
+
 # 2019-07-16T09:29:21 update
 
 # 2019-09-09T13:35:42 update

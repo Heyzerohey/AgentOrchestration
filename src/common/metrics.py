@@ -2,39 +2,44 @@
 
 import time
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 from threading import Lock
 
 
 class MetricsCollector:
-    def __init__(self):
+    def __init__(self, namespace: str = ""):
         self._lock = Lock()
+        self.namespace = namespace
         self._counters: Dict[str, int] = defaultdict(int)
         self._gauges: Dict[str, float] = {}
         self._histograms: Dict[str, List[float]] = defaultdict(list)
         self._timers: Dict[str, float] = {}
 
+    def _get_name(self, metric: str) -> str:
+        return f"{self.namespace}.{metric}" if self.namespace else metric
+
     def increment(self, metric: str, value: int = 1) -> None:
         with self._lock:
-            self._counters[metric] += value
+            self._counters[self._get_name(metric)] += value
 
     def gauge(self, metric: str, value: float) -> None:
         with self._lock:
-            self._gauges[metric] = value
+            self._gauges[self._get_name(metric)] = value
 
     def observe(self, metric: str, value: float) -> None:
         with self._lock:
-            self._histograms[metric].append(value)
+            self._histograms[self._get_name(metric)].append(value)
 
     def start_timer(self, metric: str) -> None:
         with self._lock:
-            self._timers[metric] = time.time()
+            self._timers[self._get_name(metric)] = time.time()
 
     def stop_timer(self, metric: str) -> float:
         with self._lock:
-            if metric in self._timers:
-                duration = time.time() - self._timers.pop(metric)
-                self.observe(metric, duration)
+            name = self._get_name(metric)
+            if name in self._timers:
+                duration = time.time() - self._timers.pop(name)
+                self._histograms[name].append(duration)
                 return duration
         return 0.0
 
