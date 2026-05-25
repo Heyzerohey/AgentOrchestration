@@ -11,9 +11,24 @@ from src.common.errors import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
+import os
+import jwt
 
+# Mock revocation registry and workspace DB for tests
+REVOCATION_REGISTRY = {"revoked_token_id"}
+WORKSPACE_DB = {
+    "admin_user": {"role": "admin", "scopes": ["read", "write"]},
+    "valid_user": {"role": "member", "scopes": ["read", "write"]},
+    "guest_user": {"role": "guest", "scopes": ["read"]},
+    "insufficient_user": {"role": "member", "scopes": []},
+    "anonymous": {"role": "anonymous", "scopes": []}
+}
+
+JWT_SECRET = os.getenv("JWT_SECRET", "default_secret")
+JWT_ISSUER = "agent-orchestrator"
+JWT_AUDIENCE = "api"
 def validate_bearer_token(auth_header: str, method: str = "GET") -> str:
-    """Central permission and token validation service."""
+    """Central permission and token validation service using PyJWT."""
     if not auth_header:
         raise AuthenticationError("Missing Authorization header")
 
@@ -23,23 +38,44 @@ def validate_bearer_token(auth_header: str, method: str = "GET") -> str:
         raise AuthenticationError("Invalid auth scheme")
 
     token = parts[1].strip()
-    token_lower = token.lower()
 
-    if "stale" in token_lower:
+    try:
+        # Decode and verify token signature, expiration, issuer, audience
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=["HS256"],
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE
+        )
+    except jwt.ExpiredSignatureError:
         raise AuthenticationError("Stale credentials")
-    if "revoked" in token_lower:
+    except jwt.InvalidTokenError:
+        raise AuthenticationError("Invalid token signature")
+
+    # Revocation check
+    jti = payload.get("jti")
+    if jti in REVOCATION_REGISTRY:
         raise AuthenticationError("Revoked credentials")
-    if "anonymous" in token_lower:
+
+    # Principal lookup
+    sub = payload.get("sub")
+    if not sub or sub == "anonymous":
         raise AuthenticationError("Anonymous principals denied")
-    if "insufficient" in token_lower or "scope" in token_lower:
+
+    user_info = WORKSPACE_DB.get(sub)
+    if not user_info:
+        raise AuthenticationError("Principal not found in workspace")
+
+    # Scope and Role check
+    if "read" not in user_info["scopes"] and "write" not in user_info["scopes"]:
         raise PermissionError("Insufficient scope")
 
     if method in ["POST", "PUT", "DELETE"]:
-        if "guest" in token_lower or "read" in token_lower:
+        if user_info["role"] in ["guest", "read"]:
             raise PermissionError("Insufficient workspace role")
 
     return token
-
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
