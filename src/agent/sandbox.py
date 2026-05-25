@@ -28,6 +28,10 @@ class AgentSandbox:
     def destroy(self, agent_id: str) -> bool:
         sandbox = self._sandboxes.pop(agent_id, None)
         if sandbox and sandbox.exists():
+            try:
+                sandbox.resolve().relative_to(self.base_path.resolve())
+            except ValueError:
+                return False
             import shutil
             shutil.rmtree(sandbox, ignore_errors=True)
             return True
