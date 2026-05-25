@@ -12,6 +12,13 @@ class TestMetricsCollector:
         snapshot = self.metrics.snapshot()
         assert snapshot["counters"]["requests.total"] == 2
 
+    def test_max_counter(self):
+        metrics = MetricsCollector(max_counter=10)
+        metrics.increment("req", 5)
+        metrics.increment("req", 5)
+        with pytest.raises(ValueError, match="Counter limit exceeded"):
+            metrics.increment("req", 1)
+
     def test_gauge(self):
         self.metrics.gauge("memory.usage", 85.5)
         snapshot = self.metrics.snapshot()

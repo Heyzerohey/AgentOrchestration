@@ -2,13 +2,14 @@
 
 import time
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 from threading import Lock
 
 
 class MetricsCollector:
-    def __init__(self):
+    def __init__(self, max_counter: Optional[int] = None):
         self._lock = Lock()
+        self._max_counter = max_counter
         self._counters: Dict[str, int] = defaultdict(int)
         self._gauges: Dict[str, float] = {}
         self._histograms: Dict[str, List[float]] = defaultdict(list)
@@ -16,6 +17,8 @@ class MetricsCollector:
 
     def increment(self, metric: str, value: int = 1) -> None:
         with self._lock:
+            if self._max_counter is not None and self._counters[metric] + value > self._max_counter:
+                raise ValueError("Counter limit exceeded")
             self._counters[metric] += value
 
     def gauge(self, metric: str, value: float) -> None:
