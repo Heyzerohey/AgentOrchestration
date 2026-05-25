@@ -5,7 +5,7 @@ import signal
 import subprocess
 import logging
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class AgentRuntime:
         self._processes: Dict[str, subprocess.Popen] = {}
         self._states: Dict[str, RuntimeState] = {}
 
-    def start(self, agent_id: str, command: list, env: Optional[Dict] = None) -> bool:
+    def start(self, agent_id: str, command: list, env: Optional[Dict] = None, limits: Optional[Any] = None) -> bool:
         if agent_id in self._processes and self._processes[agent_id].poll() is None:
             logger.warning(f"Agent {agent_id} is already running")
             return False
@@ -34,12 +34,18 @@ class AgentRuntime:
             process_env.update(env)
         process_env["AO_AGENT_ID"] = agent_id
 
+        preexec = None
+        if limits:
+            from src.agent.sandbox import AgentSandbox
+            preexec = AgentSandbox().get_preexec_fn(limits)
+
         try:
             proc = subprocess.Popen(
                 command,
                 env=process_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                preexec_fn=preexec,
             )
             self._processes[agent_id] = proc
             self._states[agent_id] = RuntimeState.RUNNING
@@ -64,6 +70,7 @@ class AgentRuntime:
             proc.wait()
 
         self._states[agent_id] = RuntimeState.STOPPED
+        self._processes.pop(agent_id, None)
         logger.info(f"Agent {agent_id} stopped")
         return True
 
@@ -71,6 +78,7 @@ class AgentRuntime:
         proc = self._processes.get(agent_id)
         if proc and proc.poll() is not None:
             self._states[agent_id] = RuntimeState.CRASHED
+            self._processes.pop(agent_id, None)
         return self._states.get(agent_id, RuntimeState.STOPPED)
 
     def is_running(self, agent_id: str) -> bool:

@@ -15,19 +15,21 @@ class AgentExecutor:
 
     async def execute(self, agent_id: str, task: Dict[str, Any], handler: Callable) -> str:
         execution_id = str(uuid4())
-        async with self._semaphore:
-            task_obj = asyncio.create_task(
-                self._run_execution(execution_id, agent_id, task, handler)
-            )
-            self._active_tasks[execution_id] = task_obj
-            try:
-                result = await task_obj
-                self._results[execution_id] = result
-            except Exception as e:
-                self._results[execution_id] = {"error": str(e)}
-            finally:
-                self._active_tasks.pop(execution_id, None)
+        task_obj = asyncio.create_task(
+            self._wrapped_execution(execution_id, agent_id, task, handler)
+        )
+        self._active_tasks[execution_id] = task_obj
         return execution_id
+
+    async def _wrapped_execution(self, exec_id: str, agent_id: str, task: Dict, handler: Callable) -> None:
+        try:
+            async with self._semaphore:
+                result = await self._run_execution(exec_id, agent_id, task, handler)
+                self._results[exec_id] = result
+        except Exception as e:
+            self._results[exec_id] = {"error": str(e)}
+        finally:
+            self._active_tasks.pop(exec_id, None)
 
     async def _run_execution(self, exec_id: str, agent_id: str, task: Dict, handler: Callable) -> Any:
         start = time.time()
@@ -53,10 +55,11 @@ class AgentExecutor:
         return False
 
     async def shutdown(self) -> None:
-        for task in self._active_tasks.values():
+        tasks = list(self._active_tasks.values())
+        for task in tasks:
             task.cancel()
-        if self._active_tasks:
-            await asyncio.gather(*self._active_tasks.values(), return_exceptions=True)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 # 2019-01-31T14:19:34 update
 
