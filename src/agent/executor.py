@@ -15,18 +15,23 @@ class AgentExecutor:
 
     async def execute(self, agent_id: str, task: Dict[str, Any], handler: Callable) -> str:
         execution_id = str(uuid4())
-        async with self._semaphore:
-            task_obj = asyncio.create_task(
-                self._run_execution(execution_id, agent_id, task, handler)
-            )
-            self._active_tasks[execution_id] = task_obj
+        await self._semaphore.acquire()
+
+        async def _run_and_release():
             try:
+                task_obj = asyncio.create_task(
+                    self._run_execution(execution_id, agent_id, task, handler)
+                )
+                self._active_tasks[execution_id] = task_obj
                 result = await task_obj
                 self._results[execution_id] = result
             except Exception as e:
                 self._results[execution_id] = {"error": str(e)}
             finally:
                 self._active_tasks.pop(execution_id, None)
+                self._semaphore.release()
+
+        asyncio.create_task(_run_and_release())
         return execution_id
 
     async def _run_execution(self, exec_id: str, agent_id: str, task: Dict, handler: Callable) -> Any:
