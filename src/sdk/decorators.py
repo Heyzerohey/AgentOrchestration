@@ -29,8 +29,13 @@ def task(name: Optional[str] = None, retries: int = 0, timeout: int = 300):
     return decorator
 
 
+import re
+
 def agent(name: str, version: str = "1.0.0", description: str = ""):
     """Decorator for marking a class as an agent definition."""
+    if not re.match(r"^\d+\.\d+\.\d+$", version):
+        raise ValueError("version must be in semantic version format (X.Y.Z)")
+        
     def decorator(cls: type) -> type:
         cls.__agent_config__ = {
             "name": name,
