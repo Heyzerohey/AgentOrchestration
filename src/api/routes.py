@@ -8,10 +8,16 @@ from src.agent import AgentRegistry, AgentStatus
 router = APIRouter()
 registry = AgentRegistry()
 
+def normalize_agent_id(agent_id: str) -> str:
+    return agent_id.strip().lower()
+
 
 @router.get("/agents")
 async def list_agents(status: Optional[str] = None, group: Optional[str] = None):
-    status_filter = AgentStatus(status) if status else None
+    try:
+        status_filter = AgentStatus(status) if status else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
     return {"agents": registry.list(status=status_filter, group=group)}
 
 
@@ -21,8 +27,14 @@ async def register_agent(name: str, agent_type: str, config: Optional[Dict] = No
     return {"agent_id": agent_id, "status": "registered"}
 
 
+@router.get("/agents/count")
+async def agent_count():
+    return {"count": registry.count()}
+
+
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: str):
+    agent_id = normalize_agent_id(agent_id)
     agent = registry.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -31,6 +43,7 @@ async def get_agent(agent_id: str):
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str):
+    agent_id = normalize_agent_id(agent_id)
     if not registry.delete(agent_id):
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"status": "deleted"}
@@ -38,6 +51,7 @@ async def delete_agent(agent_id: str):
 
 @router.post("/agents/{agent_id}/start")
 async def start_agent(agent_id: str):
+    agent_id = normalize_agent_id(agent_id)
     if not registry.update_status(agent_id, AgentStatus.RUNNING):
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"status": "started"}
@@ -45,14 +59,12 @@ async def start_agent(agent_id: str):
 
 @router.post("/agents/{agent_id}/stop")
 async def stop_agent(agent_id: str):
-    if not registry.update_status(agent_id, AgentStatus.PAUSED):
+    agent_id = normalize_agent_id(agent_id)
+    if not registry.update_status(agent_id, AgentStatus.STOPPED):
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"status": "stopped"}
 
 
-@router.get("/agents/count")
-async def agent_count():
-    return {"count": registry.count()}
 
 # 2019-03-18T11:10:18 update
 

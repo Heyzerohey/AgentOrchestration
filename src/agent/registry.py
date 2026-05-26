@@ -23,7 +23,7 @@ class AgentRegistry:
         self._index: Dict[str, List[str]] = {}
 
     def register(self, name: str, agent_type: str, config: Optional[Dict] = None) -> str:
-        agent_id = str(uuid.uuid4())
+        agent_id = str(uuid.uuid4()).strip().lower()
         timestamp = time.time()
         self._agents[agent_id] = {
             "id": agent_id,
