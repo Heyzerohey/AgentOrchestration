@@ -5,18 +5,19 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
-from src.agent import AgentRegistry, AgentStatus
+from src.agent.registry import AgentRegistry, AgentStatus
 from src.orchestrator.scheduler import TaskScheduler
 
 logger = logging.getLogger(__name__)
 
 
 class OrchestrationEngine:
-    def __init__(self, max_workers: int = 10, agent_timeout: int = 300):
+    def __init__(self, max_workers: int = 10, agent_timeout: int = 300, max_delegation_depth: int = 10):
         self.registry = AgentRegistry()
         self.scheduler = TaskScheduler()
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.agent_timeout = agent_timeout
+        self.max_delegation_depth = max_delegation_depth
         self._running = False
         self._hooks: Dict[str, List[Callable]] = {
             "pre_execute": [],
@@ -45,7 +46,14 @@ class OrchestrationEngine:
     async def _execute_task(self, task: Dict[str, Any]) -> None:
         task_id = task["id"]
         agent_id = task["target_agent"]
-        logger.info(f"Executing task {task_id} on agent {agent_id}")
+        depth = task.get("_delegation_depth", 0)
+        
+        if depth >= self.max_delegation_depth:
+            logger.error(f"Task {task_id} failed: Max delegation depth ({self.max_delegation_depth}) exceeded")
+            return
+            
+        task["_delegation_depth"] = depth + 1
+        logger.info(f"Executing task {task_id} on agent {agent_id} at depth {depth}")
 
         for hook in self._hooks["pre_execute"]:
             await hook(task)
