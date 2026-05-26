@@ -38,6 +38,22 @@ def cli():
         print(f"Initializing project: {args.name}")
     elif args.command == "deploy":
         print(f"Deploying agent from manifest: {args.manifest}")
+        
+        print("Pausing scheduler for graceful schema changes...")
+        from src.orchestrator.engine import OrchestrationEngine
+        import time
+        engine = OrchestrationEngine()
+        engine.scheduler.pause()
+        
+        # wait for in-flight tasks
+        while len(engine.scheduler._in_flight) > 0:
+            print("Waiting for in-flight tasks to complete...")
+            time.sleep(1)
+            
+        print("Applying schema changes...")
+        
+        engine.scheduler.resume()
+        print("Scheduler resumed.")
     elif args.command == "status":
         print("Checking agent status...")
     elif args.command == "logs":

@@ -24,6 +24,25 @@ class TestTaskScheduler:
         task = asyncio.run(self.scheduler.dequeue())
         assert task["type"] == "high"
 
+    def test_pause_resume(self):
+        self.scheduler.pause()
+        assert self.scheduler._paused is True
+        self.scheduler.resume()
+        assert self.scheduler._paused is False
+
+    @pytest.mark.anyio
+    async def test_dequeue_paused(self):
+        self.scheduler.enqueue({"type": "test"})
+        self.scheduler.pause()
+        
+        task = await self.scheduler.dequeue(timeout=0.1)
+        assert task is None
+        
+        self.scheduler.resume()
+        task = await self.scheduler.dequeue(timeout=0.1)
+        assert task is not None
+        assert task["type"] == "test"
+
     def test_complete_task(self):
         self.scheduler.enqueue({"type": "test"})
         import asyncio
