@@ -14,12 +14,13 @@ class StepStatus(Enum):
 
 
 class WorkflowStep:
-    def __init__(self, name: str, handler: Callable, retries: int = 0, timeout: int = 300):
+    def __init__(self, name: str, handler: Callable, retries: int = 0, timeout: int = 300, dependencies: List[str] = None):
         self.id = str(uuid4())
         self.name = name
         self.handler = handler
         self.retries = retries
         self.timeout = timeout
+        self.dependencies = dependencies or []
         self.status = StepStatus.PENDING
         self.result: Any = None
         self.error: Optional[str] = None
@@ -33,10 +34,18 @@ class Workflow:
         self.steps: List[WorkflowStep] = []
         self._step_map: Dict[str, WorkflowStep] = {}
         self.status = StepStatus.PENDING
+        self.parameter_aliases: Dict[str, str] = {}
 
     def add_step(self, step: WorkflowStep) -> "Workflow":
         self.steps.append(step)
         self._step_map[step.id] = step
+        self._step_map[step.name] = step
+        return self
+
+    def add_parameter_alias(self, alias: str, target: str):
+        if alias in self.parameter_aliases:
+            raise ValueError(f"Duplicate parameter alias: {alias}")
+        self.parameter_aliases[alias] = target
         return self
 
     def get_step(self, step_id: str) -> Optional[WorkflowStep]:
@@ -61,24 +70,77 @@ class WorkflowManager:
     def delete_workflow(self, workflow_id: str) -> bool:
         return self._workflows.pop(workflow_id, None) is not None
 
-    def execute_workflow(self, workflow_id: str) -> bool:
+    async def execute_workflow(self, workflow_id: str) -> bool:
         workflow = self._workflows.get(workflow_id)
         if not workflow:
             return False
 
         workflow.status = StepStatus.RUNNING
-        for step in workflow.steps:
+        
+        pending_steps = set(step.id for step in workflow.steps)
+        completed_steps = set()
+        failed = False
+        
+        import asyncio
+        async def run_step(step: WorkflowStep):
+            nonlocal failed
             step.status = StepStatus.RUNNING
-            try:
-                result = step.handler()
-                step.result = result
-                step.status = StepStatus.COMPLETED
-            except Exception as e:
-                step.error = str(e)
-                step.status = StepStatus.FAILED
-                workflow.status = StepStatus.FAILED
-                return False
+            for attempt in range(step.retries + 1):
+                try:
+                    if asyncio.iscoroutinefunction(step.handler):
+                        result = await asyncio.wait_for(step.handler(), timeout=step.timeout)
+                    else:
+                        loop = asyncio.get_event_loop()
+                        result = await asyncio.wait_for(
+                            loop.run_in_executor(None, step.handler),
+                            timeout=step.timeout
+                        )
+                    step.result = result
+                    step.status = StepStatus.COMPLETED
+                    completed_steps.add(step.id)
+                    return
+                except Exception as e:
+                    if isinstance(e, asyncio.TimeoutError) or isinstance(e, TimeoutError):
+                        step.error = "TimeoutError: execution timed out"
+                    else:
+                        step.error = str(e)
+                    if attempt == step.retries:
+                        step.status = StepStatus.FAILED
+                        failed = True
+                        workflow.status = StepStatus.FAILED
+                        return
 
+        tasks = []
+        while pending_steps and not failed:
+            ready_steps = []
+            for sid in pending_steps:
+                step = workflow._step_map[sid]
+                deps_met = True
+                for dep in step.dependencies:
+                    dep_step = workflow._step_map.get(dep)
+                    if not dep_step or dep_step.id not in completed_steps:
+                        deps_met = False
+                        break
+                if deps_met:
+                    ready_steps.append(step)
+                    
+            if not ready_steps and not tasks:
+                failed = True
+                break
+                
+            for step in ready_steps:
+                pending_steps.remove(step.id)
+                tasks.append(asyncio.create_task(run_step(step)))
+                
+            if tasks:
+                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                tasks = list(pending)
+                
+        if failed:
+            for t in tasks:
+                t.cancel()
+            return False
+            
         workflow.status = StepStatus.COMPLETED
         return True
 
