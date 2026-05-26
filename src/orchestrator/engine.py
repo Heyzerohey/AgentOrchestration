@@ -18,6 +18,8 @@ class OrchestrationEngine:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.agent_timeout = agent_timeout
         self._running = False
+        self._finalized: set = set()
+        self._finalized_lock = asyncio.Lock()
         self._hooks: Dict[str, List[Callable]] = {
             "pre_execute": [],
             "post_execute": [],
@@ -42,9 +44,20 @@ class OrchestrationEngine:
         self._running = False
         logger.info("Orchestration engine stopped")
 
+    def is_finalized(self, task_id: str) -> bool:
+        """Check whether a task has already reached a terminal state."""
+        return task_id in self._finalized
+
     async def _execute_task(self, task: Dict[str, Any]) -> None:
         task_id = task["id"]
         agent_id = task["target_agent"]
+
+        async with self._finalized_lock:
+            if task_id in self._finalized:
+                logger.warning(
+                    f"Task {task_id} already finalized — skipping duplicate execution"
+                )
+                return
         logger.info(f"Executing task {task_id} on agent {agent_id}")
 
         for hook in self._hooks["pre_execute"]:
@@ -62,12 +75,17 @@ class OrchestrationEngine:
             )
             self.registry.update_status(agent_id, AgentStatus.PAUSED)
 
+            async with self._finalized_lock:
+                self._finalized.add(task_id)
+
             for hook in self._hooks["post_execute"]:
                 await hook(task, result)
 
             logger.info(f"Task {task_id} completed successfully")
 
         except Exception as e:
+            async with self._finalized_lock:
+                self._finalized.add(task_id)
             logger.error(f"Task {task_id} failed: {e}")
             for hook in self._hooks["on_error"]:
                 await hook(task, e)
