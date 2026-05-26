@@ -48,6 +48,19 @@ class TestAgentRegistry:
     def test_delete_nonexistent_agent(self):
         assert not self.registry.delete("nonexistent-id")
 
+    def test_on_delete_callback(self):
+        agent_id = self.registry.register("test-agent", "worker.processor")
+        
+        callback_called_with = None
+        def my_callback(deleted_id):
+            nonlocal callback_called_with
+            callback_called_with = deleted_id
+            
+        self.registry.register_on_delete(my_callback)
+        self.registry.delete(agent_id)
+        
+        assert callback_called_with == agent_id
+
 # 2019-01-23T10:28:57 update
 
 # 2019-01-28T18:15:57 update

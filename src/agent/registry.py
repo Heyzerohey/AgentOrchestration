@@ -4,7 +4,7 @@ import json
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 class AgentStatus(Enum):
@@ -21,6 +21,10 @@ class AgentRegistry:
         self.storage_backend = storage_backend
         self._agents: Dict[str, Dict[str, Any]] = {}
         self._index: Dict[str, List[str]] = {}
+        self._on_delete_callbacks: List[Callable] = []
+
+    def register_on_delete(self, callback: Callable) -> None:
+        self._on_delete_callbacks.append(callback)
 
     def register(self, name: str, agent_type: str, config: Optional[Dict] = None) -> str:
         agent_id = str(uuid.uuid4())
@@ -68,6 +72,13 @@ class AgentRegistry:
         group = agent["type"].split(".")[0]
         if group in self._index and agent_id in self._index[group]:
             self._index[group].remove(agent_id)
+            
+        for callback in self._on_delete_callbacks:
+            try:
+                callback(agent_id)
+            except Exception as e:
+                pass
+                
         return True
 
     def count(self) -> int:

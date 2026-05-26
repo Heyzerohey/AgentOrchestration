@@ -81,6 +81,17 @@ class TaskScheduler:
                 return True
         return False
 
+    def purge_agent(self, agent_id: str) -> None:
+        for queue_name, pq in self._queues.items():
+            new_q = [item for item in pq._queue if item[2].get("target_agent") != agent_id]
+            pq._queue = new_q
+            heapq.heapify(pq._queue)
+            pq._counter = len(pq._queue)
+            
+        tids_to_remove = [tid for tid, t in self._in_flight.items() if t.get("target_agent") == agent_id]
+        for tid in tids_to_remove:
+            self._in_flight.pop(tid, None)
+
 # 2019-04-25T08:37:12 update
 
 # 2019-06-04T16:40:00 update

@@ -36,6 +36,17 @@ class TestTaskScheduler:
         task = asyncio.run(self.scheduler.dequeue())
         assert self.scheduler.fail(task["id"])
 
+    def test_purge_agent(self):
+        self.scheduler.enqueue({"type": "test-1", "target_agent": "agent-1"})
+        self.scheduler.enqueue({"type": "test-2", "target_agent": "agent-1"}, priority=10)
+        self.scheduler.enqueue({"type": "test-3", "target_agent": "agent-2"})
+        
+        self.scheduler.purge_agent("agent-1")
+        
+        import asyncio
+        task = asyncio.run(self.scheduler.dequeue())
+        assert task["type"] == "test-3"
+
 # 2019-01-09T19:07:03 update
 
 # 2019-02-18T12:30:02 update

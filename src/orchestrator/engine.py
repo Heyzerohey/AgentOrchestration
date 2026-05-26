@@ -5,7 +5,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
-from src.agent import AgentRegistry, AgentStatus
+from src.agent.registry import AgentRegistry, AgentStatus
 from src.orchestrator.scheduler import TaskScheduler
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,7 @@ class OrchestrationEngine:
     def __init__(self, max_workers: int = 10, agent_timeout: int = 300):
         self.registry = AgentRegistry()
         self.scheduler = TaskScheduler()
+        self.registry.register_on_delete(self.scheduler.purge_agent)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.agent_timeout = agent_timeout
         self._running = False
