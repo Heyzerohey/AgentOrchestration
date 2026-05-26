@@ -57,6 +57,17 @@ class AgentRegistry:
     def update_status(self, agent_id: str, status: AgentStatus) -> bool:
         if agent_id not in self._agents:
             return False
+            
+        current_status = self._agents[agent_id]["status"]
+        terminal_states = {
+            AgentStatus.STOPPED.value,
+            AgentStatus.FAILED.value,
+            AgentStatus.TERMINATED.value
+        }
+        
+        if current_status in terminal_states and status.value not in terminal_states:
+            return False
+            
         self._agents[agent_id]["status"] = status.value
         self._agents[agent_id]["updated_at"] = time.time()
         return True

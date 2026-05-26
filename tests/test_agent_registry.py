@@ -40,6 +40,17 @@ class TestAgentRegistry:
         agent = self.registry.get(agent_id)
         assert agent["status"] == "running"
 
+    def test_update_status_prevents_reviving_terminal_states(self):
+        agent_id = self.registry.register("test-agent", "worker.processor")
+        
+        # Move to terminal state
+        assert self.registry.update_status(agent_id, AgentStatus.STOPPED)
+        
+        # Attempt to revive
+        assert not self.registry.update_status(agent_id, AgentStatus.RUNNING)
+        agent = self.registry.get(agent_id)
+        assert agent["status"] == "stopped"  # Should still be stopped
+
     def test_delete_agent(self):
         agent_id = self.registry.register("test-agent", "worker.processor")
         assert self.registry.delete(agent_id)
