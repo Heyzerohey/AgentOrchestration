@@ -50,6 +50,33 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         logger.info(f"{request.method} {request.url.path} {response.status_code} {duration:.3f}s")
         return response
 
+class ProxyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        has_forwarded = "forwarded" in request.headers
+        has_x_forwarded = any(k.startswith("x-forwarded-") for k in request.headers)
+        
+        if has_forwarded and has_x_forwarded:
+            return Response(status_code=400, content="Conflicting forwarded headers")
+            
+        return await call_next(request)
+
+class SSEMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        is_sse = "text/event-stream" in request.headers.get("accept", "")
+        
+        if is_sse:
+            request.scope["headers"] = [
+                (k, v) for k, v in request.scope["headers"] 
+                if k.lower() != b"accept-encoding"
+            ]
+            
+        response = await call_next(request)
+        
+        if response.headers.get("content-type", "").startswith("text/event-stream"):
+            response.headers["Cache-Control"] = "no-cache, no-transform"
+            
+        return response
+
 # 2019-03-01T18:35:19 update
 
 # 2019-04-03T13:22:05 update
