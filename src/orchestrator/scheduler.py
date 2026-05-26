@@ -33,9 +33,13 @@ class PriorityQueue:
 class TaskScheduler:
     def __init__(self):
         self._queues: Dict[str, PriorityQueue] = {}
-        self._scheduled: Dict[str, float] = {}
+        self._scheduled: Dict[str, Dict] = {}
         self._in_flight: Dict[str, Dict] = {}
         self._max_retries = 3
+        self._promoted_ids = set()
+
+    def _scheduled_queue_name(self, queue: str) -> str:
+        return f"{queue}_scheduled"
 
     def enqueue(self, task: Dict, queue: str = "default", priority: int = 0) -> str:
         task_id = str(uuid4())
@@ -51,22 +55,47 @@ class TaskScheduler:
     def schedule(self, task: Dict, delay: float, queue: str = "default", priority: int = 0) -> str:
         task_id = str(uuid4())
         task["id"] = task_id
-        self._scheduled[task_id] = time.time() + delay
+        self._scheduled[task_id] = {
+            "task": task,
+            "fire_at": time.time() + delay,
+            "queue": queue,
+            "priority": priority,
+        }
         return task_id
 
-    async def dequeue(self, queue: str = "default", timeout: float = 1.0) -> Optional[Dict]:
+    def _promote_expired(self) -> None:
         now = time.time()
-        expired = [tid for tid, t in self._scheduled.items() if t <= now]
-        for tid in expired:
-            task = self._scheduled.pop(tid)
-            if task:
-                self.enqueue(task, queue)
+        expired_ids = [
+            tid for tid, item in self._scheduled.items()
+            if item["fire_at"] <= now
+        ]
+        for tid in expired_ids:
+            item = self._scheduled.pop(tid, None)
+            if item:
+                task = item["task"]
+                if task["id"] not in self._promoted_ids:
+                    self._promoted_ids.add(task["id"])
+                    sched_q = self._scheduled_queue_name(item["queue"])
+                    if sched_q not in self._queues:
+                        self._queues[sched_q] = PriorityQueue()
+                    self._queues[sched_q].push(task, item["priority"])
+
+    async def dequeue(self, queue: str = "default", timeout: float = 1.0) -> Optional[Dict]:
+        self._promote_expired()
 
         if queue in self._queues and len(self._queues[queue]) > 0:
             task = self._queues[queue].pop()
             if task:
                 self._in_flight[task["id"]] = task
                 return task
+
+        sched_q = self._scheduled_queue_name(queue)
+        if sched_q in self._queues and len(self._queues[sched_q]) > 0:
+            task = self._queues[sched_q].pop()
+            if task:
+                self._in_flight[task["id"]] = task
+                return task
+
         return None
 
     def complete(self, task_id: str) -> bool:
